@@ -963,6 +963,7 @@ input,select{font-family:inherit;}
         <input class="finput" id="mFrom" readonly style="opacity:.7;">
       </div>
       <div class="minfo">ⓘ Keine Patientendaten werden übertragen. Das Zielkrankenhaus sieht nur Fachbereich und Priorität.</div>
+      <div class="lerr" id="mErr" style="margin-top:12px;margin-bottom:0;">Anfrage konnte nicht gesendet werden. Bitte erneut versuchen.</div>
     </div>
     <div class="mfooter" id="mfooter">
       <button class="btn-secondary" onclick="closeModal()">Abbrechen</button>
@@ -994,13 +995,17 @@ const FAECHERLIST = ['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neuroch
 
 // OP-Kapazität categories for the logged-in hospital's own OP-Säle table.
 // Starts with the four defaults; a hospital can add more (e.g. Geburtshilfe)
-// via the "+ Kategorie hinzufügen" control.
-let OP_CATEGORIES = [
+// via the "+ Kategorie hinzufügen" control. Kept as a template so initApp()
+// can reset OP_CATEGORIES to a fresh copy on every login — otherwise one
+// hospital's edited/added categories leak into the next login's session.
+const DEFAULT_OP_CATEGORIES = [
   {key:'G', label:'Allgemein-OP',                  sub:'Alle Fachrichtungen',           fach:'Allgemeinchirurgie',             total:8, free:3},
   {key:'H', label:'Herzchirurgie',                 sub:'Kardiologie / Herzchirurgie',   fach:'Herzchirurgie / Kardiologie',    total:3, free:1},
   {key:'N', label:'Neurochirurgie',                sub:'Spezialisierter Eingriff',      fach:'Neurochirurgie',                 total:2, free:0},
   {key:'O', label:'Orthopädie / Unfallchirurgie',  sub:'Spezialisierter Eingriff',      fach:'Orthopädie / Unfallchirurgie',   total:4, free:2},
 ];
+const DEFAULT_AF = ['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Orthopädie / Unfallchirurgie'];
+let OP_CATEGORIES = DEFAULT_OP_CATEGORIES.map(c=>({...c}));
 
 // Supabase — shared transfer store, synced in real time across all hospitals.
 // Not wired up yet: fill these in once the Supabase project exists, and
@@ -1078,36 +1083,36 @@ const GD = [
 
 // Hospitals for map
 const HOSPITALS = [
-  {id:1, n:'AKH Wien',                   city:'Wien',      bl:'Wien',lat:172,lng:518,ops:{g:6,h:2,n:2,o:4},fach:['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neurochirurgie','Orthopädie / Unfallchirurgie','Onkologie']},
-  {id:2, n:'Klinik Favoriten',            city:'Wien',      bl:'Wien',lat:185,lng:524,ops:{g:5,h:0,n:1,o:3},fach:['Allgemeinchirurgie','Orthopädie / Unfallchirurgie','Gynäkologie']},
-  {id:3, n:'Klinik Ottakring',            city:'Wien',      bl:'Wien',lat:167,lng:512,ops:{g:4,h:0,n:0,o:2},fach:['Allgemeinchirurgie','Gynäkologie','Urologie']},
-  {id:4, n:'Kepler Universitätsklinikum', city:'Linz',      bl:'OÖ', lat:130,lng:330,ops:{g:5,h:2,n:2,o:4},fach:['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neurochirurgie','Orthopädie / Unfallchirurgie']},
-  {id:5, n:'Klinikum Wels-Grieskirchen',  city:'Wels',      bl:'OÖ', lat:144,lng:305,ops:{g:1,h:0,n:0,o:1},fach:['Allgemeinchirurgie','Orthopädie / Unfallchirurgie']},
-  {id:6, n:'Pyhrn-EW Klinikum Steyr',     city:'Steyr',     bl:'OÖ', lat:154,lng:352,ops:{g:4,h:0,n:0,o:3},fach:['Allgemeinchirurgie','Orthopädie / Unfallchirurgie','Gynäkologie']},
-  {id:7, n:'Ordensklinikum Linz',          city:'Linz',      bl:'OÖ', lat:136,lng:336,ops:{g:4,h:1,n:0,o:2},fach:['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Gynäkologie']},
-  {id:8, n:'LKH Univ.-Klinikum Graz',     city:'Graz',      bl:'STK',lat:222,lng:352,ops:{g:0,h:0,n:0,o:0},fach:['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neurochirurgie']},
-  {id:9, n:'LKH Hochsteiermark Leoben',    city:'Leoben',    bl:'STK',lat:198,lng:378,ops:{g:3,h:0,n:0,o:2},fach:['Allgemeinchirurgie','Orthopädie / Unfallchirurgie']},
-  {id:10,n:'LKH Klagenfurt',              city:'Klagenfurt',bl:'KTN',lat:244,lng:268,ops:{g:3,h:1,n:0,o:2},fach:['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Orthopädie / Unfallchirurgie']},
-  {id:11,n:'LKH Villach',                 city:'Villach',   bl:'KTN',lat:247,lng:232,ops:{g:3,h:0,n:0,o:3},fach:['Allgemeinchirurgie','Orthopädie / Unfallchirurgie','Gynäkologie']},
-  {id:12,n:'Salzburger Universitätsklinikum',city:'Salzburg',bl:'SBG',lat:147,lng:235,ops:{g:4,h:2,n:1,o:3},fach:['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neurochirurgie','Orthopädie / Unfallchirurgie']},
-  {id:13,n:'Kardinal Schwarzenberg Klinikum',city:'Schwarzach',bl:'SBG',lat:163,lng:228,ops:{g:3,h:0,n:0,o:2},fach:['Allgemeinchirurgie','Orthopädie / Unfallchirurgie','Gynäkologie']},
-  {id:14,n:'Tirol Kliniken Innsbruck',     city:'Innsbruck', bl:'TIR',lat:147,lng:152,ops:{g:5,h:2,n:2,o:4},fach:['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neurochirurgie','Orthopädie / Unfallchirurgie']},
-  {id:15,n:'Bezirkskrankenhaus Kufstein',  city:'Kufstein',  bl:'TIR',lat:139,lng:197,ops:{g:2,h:0,n:0,o:2},fach:['Allgemeinchirurgie','Orthopädie / Unfallchirurgie']},
-  {id:16,n:'Landeskrankenhaus Bregenz',    city:'Bregenz',   bl:'VBG',lat:140,lng:48, ops:{g:3,h:0,n:0,o:2},fach:['Allgemeinchirurgie','Gynäkologie','Orthopädie / Unfallchirurgie']},
-  {id:17,n:'Landeskrankenhaus Feldkirch',  city:'Feldkirch', bl:'VBG',lat:158,lng:46, ops:{g:1,h:0,n:0,o:1},fach:['Allgemeinchirurgie','Orthopädie / Unfallchirurgie']},
-  {id:18,n:'Universitätsklinikum St. Pölten',city:'St. Pölten',bl:'NÖ',lat:160,lng:455,ops:{g:4,h:1,n:1,o:3},fach:['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neurochirurgie']},
-  {id:19,n:'Landesklinikum Wiener Neustadt',city:'Wr. Neustadt',bl:'NÖ',lat:200,lng:498,ops:{g:3,h:0,n:0,o:2},fach:['Allgemeinchirurgie','Gynäkologie','Orthopädie / Unfallchirurgie']},
-  {id:20,n:'Landesklinikum Krems',         city:'Krems',     bl:'NÖ',lat:142,lng:458,ops:{g:3,h:0,n:0,o:2},fach:['Allgemeinchirurgie','Orthopädie / Unfallchirurgie']},
-  {id:21,n:'KH Barmherzige Brüder Eisenstadt',city:'Eisenstadt',bl:'BGD',lat:192,lng:542,ops:{g:2,h:0,n:0,o:1},fach:['Allgemeinchirurgie','Gynäkologie']},
+  {id:1, n:'AKH Wien',                   city:'Wien',      bl:'Wien',lat:172,lng:518,ops:{g:6,h:2,n:2,o:4},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neurochirurgie','Orthopädie / Unfallchirurgie','Onkologie']},
+  {id:2, n:'Klinik Favoriten',            city:'Wien',      bl:'Wien',lat:185,lng:524,ops:{g:5,h:0,n:1,o:3},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Orthopädie / Unfallchirurgie','Gynäkologie']},
+  {id:3, n:'Klinik Ottakring',            city:'Wien',      bl:'Wien',lat:167,lng:512,ops:{g:4,h:0,n:0,o:2},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Gynäkologie','Urologie']},
+  {id:4, n:'Kepler Universitätsklinikum', city:'Linz',      bl:'OÖ', lat:130,lng:330,ops:{g:5,h:2,n:2,o:4},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neurochirurgie','Orthopädie / Unfallchirurgie']},
+  {id:5, n:'Klinikum Wels-Grieskirchen',  city:'Wels',      bl:'OÖ', lat:144,lng:305,ops:{g:1,h:0,n:0,o:1},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Orthopädie / Unfallchirurgie']},
+  {id:6, n:'Pyhrn-EW Klinikum Steyr',     city:'Steyr',     bl:'OÖ', lat:154,lng:352,ops:{g:4,h:0,n:0,o:3},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Orthopädie / Unfallchirurgie','Gynäkologie']},
+  {id:7, n:'Ordensklinikum Linz',          city:'Linz',      bl:'OÖ', lat:136,lng:336,ops:{g:4,h:1,n:0,o:2},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Gynäkologie']},
+  {id:8, n:'LKH Univ.-Klinikum Graz',     city:'Graz',      bl:'STK',lat:222,lng:352,ops:{g:0,h:0,n:0,o:0},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neurochirurgie']},
+  {id:9, n:'LKH Hochsteiermark Leoben',    city:'Leoben',    bl:'STK',lat:198,lng:378,ops:{g:3,h:0,n:0,o:2},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Orthopädie / Unfallchirurgie']},
+  {id:10,n:'LKH Klagenfurt',              city:'Klagenfurt',bl:'KTN',lat:244,lng:268,ops:{g:3,h:1,n:0,o:2},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Orthopädie / Unfallchirurgie']},
+  {id:11,n:'LKH Villach',                 city:'Villach',   bl:'KTN',lat:247,lng:232,ops:{g:3,h:0,n:0,o:3},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Orthopädie / Unfallchirurgie','Gynäkologie']},
+  {id:12,n:'Salzburger Universitätsklinikum',city:'Salzburg',bl:'SBG',lat:147,lng:235,ops:{g:4,h:2,n:1,o:3},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neurochirurgie','Orthopädie / Unfallchirurgie']},
+  {id:13,n:'Kardinal Schwarzenberg Klinikum',city:'Schwarzach',bl:'SBG',lat:163,lng:228,ops:{g:3,h:0,n:0,o:2},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Orthopädie / Unfallchirurgie','Gynäkologie']},
+  {id:14,n:'Tirol Kliniken Innsbruck',     city:'Innsbruck', bl:'TIR',lat:147,lng:152,ops:{g:5,h:2,n:2,o:4},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neurochirurgie','Orthopädie / Unfallchirurgie']},
+  {id:15,n:'Bezirkskrankenhaus Kufstein',  city:'Kufstein',  bl:'TIR',lat:139,lng:197,ops:{g:2,h:0,n:0,o:2},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Orthopädie / Unfallchirurgie']},
+  {id:16,n:'Landeskrankenhaus Bregenz',    city:'Bregenz',   bl:'VBG',lat:140,lng:48, ops:{g:3,h:0,n:0,o:2},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Gynäkologie','Orthopädie / Unfallchirurgie']},
+  {id:17,n:'Landeskrankenhaus Feldkirch',  city:'Feldkirch', bl:'VBG',lat:158,lng:46, ops:{g:1,h:0,n:0,o:1},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Orthopädie / Unfallchirurgie']},
+  {id:18,n:'Universitätsklinikum St. Pölten',city:'St. Pölten',bl:'NÖ',lat:160,lng:455,ops:{g:4,h:1,n:1,o:3},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neurochirurgie']},
+  {id:19,n:'Landesklinikum Wiener Neustadt',city:'Wr. Neustadt',bl:'NÖ',lat:200,lng:498,ops:{g:3,h:0,n:0,o:2},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Gynäkologie','Orthopädie / Unfallchirurgie']},
+  {id:20,n:'Landesklinikum Krems',         city:'Krems',     bl:'NÖ',lat:142,lng:458,ops:{g:3,h:0,n:0,o:2},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Orthopädie / Unfallchirurgie']},
+  {id:21,n:'KH Barmherzige Brüder Eisenstadt',city:'Eisenstadt',bl:'BGD',lat:192,lng:542,ops:{g:2,h:0,n:0,o:1},max:{g:8,h:3,n:2,o:4},fach:['Allgemeinchirurgie','Gynäkologie']},
 ];
 
 function getStatus(h) {
   const tot = h.ops.g + h.ops.h + h.ops.n + h.ops.o;
   if (tot === 0) return 'r';
-  const maxCap = {g:8,h:3,n:2,o:4};
+  const maxCap = h.max;
   const totalMax = maxCap.g + maxCap.h + maxCap.n + maxCap.o;
   const pct = Math.round(((totalMax - tot) / totalMax) * 100);
-  return pct >= 85 ? 'r' : pct >= 60 ? 'a' : 'g';
+  return pct > 85 ? 'r' : pct >= 60 ? 'a' : 'g';
 }
 
 /* ============================================================
@@ -1116,14 +1121,14 @@ function getStatus(h) {
 let CU = null;
 let selectedH = null;
 let currentFilter = 'all';
-let AF = ['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Orthopädie / Unfallchirurgie'];
+let AF = [...DEFAULT_AF];
 
 /* ============================================================
    HELPERS
 ============================================================ */
 function P(t,f){const tv=Math.max(1,+t||1),fv=Math.min(tv,Math.max(0,+f||0));return Math.round(((tv-fv)/tv)*100);}
-function PC(p){return p>=85?'var(--red)':p>=60?'var(--amber)':'var(--green)';}
-function SL(p){return p>=85?['Ausgelastet','chip-r']:p>=60?['Begrenzt','chip-a']:['Verfügbar','chip-g'];}
+function PC(p){return p>85?'var(--red)':p>=60?'var(--amber)':'var(--green)';}
+function SL(p){return p>85?['Ausgelastet','chip-r']:p>=60?['Begrenzt','chip-a']:['Verfügbar','chip-g'];}
 function T(){return new Date().toLocaleTimeString('de-AT',{hour:'2-digit',minute:'2-digit'});}
 function set(id,v){const e=document.getElementById(id);if(e)e.textContent=v;}
 function getV(id,def){return+(document.getElementById(id)?.value??def);}
@@ -1220,6 +1225,11 @@ function initApp(){
   // item, its data, or a non-default panel/view showing.
   document.querySelector('.ngoeg').style.display='none';
   document.getElementById('gbody').innerHTML='';
+  // Also reset the editable OP-Kapazität/Fachrichtungen state — otherwise
+  // a hospital's edited (even unsaved) numbers survive into the next
+  // hospital's session logged into the same tab.
+  OP_CATEGORIES=DEFAULT_OP_CATEGORIES.map(c=>({...c}));
+  AF=[...DEFAULT_AF];
   const nc=document.getElementById('nop');
   nc.style.opacity=''; nc.style.pointerEvents='';
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('on'));
@@ -1334,10 +1344,6 @@ function renderList(){
   }
   list.innerHTML=filtered.map(h=>{
     const s=getStatus(h);
-    const tot=h.ops.g+h.ops.h+h.ops.n+h.ops.o;
-    const maxTot=8+3+2+4;
-    const pct=P(maxTot,tot);
-    const c=PC(pct);
     const sel=selectedH?.id===h.id?' sel':'';
     return `<div class="hcard${sel}" onclick="selectHospital(HOSPITALS.find(x=>x.id===${h.id}))">
       <div class="hcard-top">
@@ -1345,7 +1351,7 @@ function renderList(){
         <div class="sbadge ${s}">${statusLabel(s)}</div>
       </div>
       <div class="capbars">
-        ${[['Allgemein-OP',h.ops.g,8],['Herzchirurgie',h.ops.h,3],['Orthopädie',h.ops.o,4]].map(([label,free,max])=>{
+        ${[['Allgemein-OP',h.ops.g,h.max.g],['Herzchirurgie',h.ops.h,h.max.h],['Orthopädie',h.ops.o,h.max.o]].map(([label,free,max])=>{
           const p=P(max,free),c2=PC(p);
           return `<div class="caprow"><div class="caplabel">${label}</div><div class="captrack"><div class="capfill" style="width:${p}%;background:${c2}"></div></div><div class="capnum">${free} frei</div></div>`;
         }).join('')}
@@ -1394,10 +1400,10 @@ function selectHospital(h){
   const s=getStatus(h);
   // build cap rows
   const capRows=[
-    {label:'Allgemein-OP',     free:h.ops.g, total:8},
-    {label:'Herzchirurgie',    free:h.ops.h, total:3},
-    {label:'Neurochirurgie',   free:h.ops.n, total:2},
-    {label:'Orthopädie / UC',  free:h.ops.o, total:4},
+    {label:'Allgemein-OP',     free:h.ops.g, total:h.max.g},
+    {label:'Herzchirurgie',    free:h.ops.h, total:h.max.h},
+    {label:'Neurochirurgie',   free:h.ops.n, total:h.max.n},
+    {label:'Orthopädie / UC',  free:h.ops.o, total:h.max.o},
   ];
   document.getElementById('dpCap').innerHTML=capRows.map(r=>{
     const p=P(r.total,r.free);const c=PC(p);const[sl]=SL(p);
@@ -1568,7 +1574,7 @@ function publishToMap(){
   if(!h) return;
   OP_CATEGORIES.forEach(c=>{
     const key=FACH_TO_OPS_KEY[c.fach];
-    if(key) h.ops[key]=c.free;
+    if(key){ h.ops[key]=c.free; h.max[key]=c.total; }
   });
   h.fach=AF.slice();
   renderPins(); renderList(); updateMapStats();
@@ -1670,13 +1676,24 @@ function reserveCapacity(fach){
   if(!freeInput) return;
   freeInput.value=Math.max(0,(+freeInput.value||0)-1);
   recalc();
+  // Publish immediately — otherwise the map/list keep showing the old
+  // (higher) free count until the hospital happens to click "Speichern",
+  // defeating the double-booking protection this reservation is for.
+  publishToMap();
 }
 
 async function act(id,s){
   const t=TRANSFERS.find(t=>String(t.id)===String(id));
   if(SUPABASE_CONFIGURED){
-    const {error}=await sb.from('transfers').update({status:s}).eq('id',id);
+    const {data,error}=await sb.from('transfers').update({status:s}).eq('id',id).select();
     if(error){console.error('act',error);return;}
+    if(!data||!data.length){
+      // 0 rows matched: another session already changed this transfer's
+      // status, so RLS's status='pending' USING clause excluded it from
+      // our update. Re-fetch instead of optimistically applying our guess.
+      await loadTransfers();
+      return;
+    }
   }
   // optimistic local update; if configured, the realtime UPDATE event confirms/no-ops
   TRANSFERS=TRANSFERS.map(t=>String(t.id)===String(id)?{...t,status:s}:t);
@@ -1881,6 +1898,7 @@ function openModal(){
   document.getElementById('mfooter').style.display='flex';
   document.getElementById('mhead').style.display='flex';
   document.getElementById('msuccess').classList.remove('on');
+  document.getElementById('mErr').style.display='none';
   const btn=document.getElementById('mSubmitBtn');
   btn.disabled=false; btn.textContent='Anfrage senden';
   document.getElementById('modal').classList.add('on');
@@ -1911,6 +1929,7 @@ async function submitReq(){
     if(error){
       console.error('submitReq',error);
       btn.disabled=false; btn.textContent='Anfrage senden';
+      document.getElementById('mErr').style.display='block';
       return;
     }
   } else {
