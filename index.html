@@ -1569,14 +1569,18 @@ const FACH_TO_OPS_KEY = {
   'Orthopädie / Unfallchirurgie':'o',
 };
 
-function publishToMap(){
+// `only`: when set, publishes just that one Fachbereich's category instead
+// of every category currently in the DOM — used by reserveCapacity() so
+// accepting a transfer can't leak other, still-unsaved edits to the public map.
+function publishToMap(only){
   const h=HOSPITALS.find(x=>x.n===CU?.hospital);
   if(!h) return;
   OP_CATEGORIES.forEach(c=>{
+    if(only&&c.fach!==only) return;
     const key=FACH_TO_OPS_KEY[c.fach];
     if(key){ h.ops[key]=c.free; h.max[key]=c.total; }
   });
-  h.fach=AF.slice();
+  if(!only) h.fach=AF.slice();
   renderPins(); renderList(); updateMapStats();
   if(selectedH?.id===h.id) selectHospital(h);
 }
@@ -1679,7 +1683,9 @@ function reserveCapacity(fach){
   // Publish immediately — otherwise the map/list keep showing the old
   // (higher) free count until the hospital happens to click "Speichern",
   // defeating the double-booking protection this reservation is for.
-  publishToMap();
+  // Scoped to `fach` only, so unrelated unsaved edits in other categories
+  // aren't force-published as a side effect of accepting this transfer.
+  publishToMap(fach);
 }
 
 async function act(id,s){
@@ -1698,8 +1704,11 @@ async function act(id,s){
   // optimistic local update; if configured, the realtime UPDATE event confirms/no-ops
   TRANSFERS=TRANSFERS.map(t=>String(t.id)===String(id)?{...t,status:s}:t);
   // Confirmed acceptance = a real reservation: hold the bed now to avoid double-booking.
-  if(s==='accepted'&&t) reserveCapacity(t.fach);
-  renderTR(); renderSent(); updateBadge(); recalc();
+  // reserveCapacity() already calls recalc(), so only call it here otherwise.
+  const reserved=s==='accepted'&&t;
+  if(reserved) reserveCapacity(t.fach);
+  renderTR(); renderSent(); updateBadge();
+  if(!reserved) recalc();
 }
 
 /* ============================================================
