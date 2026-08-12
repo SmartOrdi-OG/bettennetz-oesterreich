@@ -1126,7 +1126,7 @@ let AF = [...DEFAULT_AF];
 /* ============================================================
    HELPERS
 ============================================================ */
-function P(t,f){const tv=Math.max(1,+t||1),fv=Math.min(tv,Math.max(0,+f||0));return Math.round(((tv-fv)/tv)*100);}
+function P(t,f){const rawT=+t||0;if(rawT<=0)return 0;const tv=rawT,fv=Math.min(tv,Math.max(0,+f||0));return Math.round(((tv-fv)/tv)*100);}
 function PC(p){return p>85?'var(--red)':p>=60?'var(--amber)':'var(--green)';}
 function SL(p){return p>85?['Ausgelastet','chip-r']:p>=60?['Begrenzt','chip-a']:['Verfügbar','chip-g'];}
 function T(){return new Date().toLocaleTimeString('de-AT',{hour:'2-digit',minute:'2-digit'});}
