@@ -42,6 +42,13 @@
 - **CSV-/PDF-Export**: Export-Buttons auf Berichte, eingehenden/gesendeten OP-Anfragen und der GÖG-Gesamtübersicht. CSV mit Semikolon-Trennung + UTF-8-BOM (passend für Excel AT/DE), PDF über den nativen Druckdialog des Browsers mit eigenem Print-Stylesheet
 - **Impressum & Datenschutzerklärung**: rechtlich erforderliche Seiten mit echten Angaben (SmartOrdi OG, Steingasse A6, 4020 Linz, team@smartordi.eu), verlinkt im Landing-Page-Footer. Datenschutzerklärung beschreibt die tatsächliche Datenverarbeitung (Zugangsdaten, betriebliche Daten, **keine Patientendaten**, eingesetzte Dienste)
 
+### Weitere Bugfixes (zweiter Codecheck)
+- OP-Kapazität-Kategorien: `reserveCapacity()` griff nur für 4 von 10 Fachbereichen — Annahme einer Anfrage für z. B. Gynäkologie/Onkologie markierte sie als "Angenommen" und vergab einen Handover-Code, reservierte aber nie echte Kapazität. `DEFAULT_OP_CATEGORIES`/`FACH_TO_OPS_KEY` decken jetzt alle 10 Fachbereiche ab; Karte/Liste/Detailpanel lesen die Kategorien jetzt dynamisch statt vier Felder hart zu kodieren
+- Annahme einer Anfrage veröffentlichte fälschlich *alle* OP-Kategorien (inkl. anderswo gerade unfertig editierter Werte) statt nur der reservierten — `publishToMap()` nimmt jetzt einen optionalen Fachbereich-Filter
+- `P(0,0)` zeigte eine frisch hinzugefügte Kategorie sofort als 100 % "Ausgelastet" statt 0 %
+- **Supabase-Sync für OP-Kapazität**: neue `hospital_capacity`-Tabelle (inkl. RLS + Realtime) in `supabase/schema.sql`, mit Seed-Daten für alle 21 Demo-Krankenhäuser. `index.html` lädt/abonniert/schreibt sie jetzt (`loadHospitalCapacity`, `subscribeHospitalCapacity`, `persistCapacity`) — vorher schrieb `publishToMap()`/`save()` nur ins lokale `HOSPITALS`-Array, die Kartendaten synchronisierten sich also nie zwischen Sessions, selbst mit verbundenem Supabase
+- `transfers.fach`-CHECK-Constraint in `schema.sql` erlaubte nur 8 von 10 Fachbereichen — Anfragen für Pädiatrische Chirurgie/Gefäßchirurgie wären mit verbundenem Supabase am Insert gescheitert
+
 ## Offen
 - [ ] **Impressum ergänzen**: Firmenbuchnummer und UID-Nummer (falls vorhanden) fehlen noch — rechtlich für eine OG relevant, aktuell bewusst weggelassen statt geraten
 - [ ] Supabase-Projekt anlegen, `supabase/schema.sql` ausführen (Reihenfolge steht im Dateikopf)

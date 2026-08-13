@@ -47,7 +47,7 @@ create table if not exists transfers (
   fach text not null check (fach in (
     'Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neurochirurgie',
     'Orthopädie / Unfallchirurgie','Gynäkologie','Geburtshilfe / Entbindung',
-    'Urologie','Onkologie'
+    'Urologie','Onkologie','Pädiatrische Chirurgie','Gefäßchirurgie'
   )),
   prio text not null check (prio in ('Normal','Dringend','Notfall')),
   status text not null default 'pending' check (status in ('pending','accepted','declined')),
@@ -94,6 +94,47 @@ grant update (status) on transfers to authenticated;
 alter publication supabase_realtime add table transfers;
 
 -- ---------------------------------------------------------------------------
+-- hospital_capacity — one row per hospital holding its current OP-Kapazität
+-- (ops/max per category key, see FACH_TO_OPS_KEY in index.html) and active
+-- Fachrichtungen. This is the live, shared state behind the public map/list —
+-- every hospital's publishToMap()/save() upserts its own row here, and every
+-- connected session subscribes to changes so the map updates in real time.
+-- ---------------------------------------------------------------------------
+create table if not exists hospital_capacity (
+  hospital text primary key check (char_length(hospital) between 1 and 120),
+  ops jsonb not null default '{}'::jsonb,
+  max jsonb not null default '{}'::jsonb,
+  fach text[] not null default '{}',
+  updated_at timestamptz not null default now()
+);
+
+alter table hospital_capacity enable row level security;
+
+-- Every authenticated hospital/GÖG user can see every hospital's capacity —
+-- that's the entire point of the shared map.
+create policy "hospital_capacity_select_all" on hospital_capacity
+  for select to authenticated
+  using (true);
+
+-- A hospital may only ever write its own row.
+create policy "hospital_capacity_upsert_own" on hospital_capacity
+  for insert to authenticated
+  with check (
+    hospital = (select hospital from hospital_profiles where user_id = auth.uid())
+  );
+
+create policy "hospital_capacity_update_own" on hospital_capacity
+  for update to authenticated
+  using (
+    hospital = (select hospital from hospital_profiles where user_id = auth.uid())
+  )
+  with check (
+    hospital = (select hospital from hospital_profiles where user_id = auth.uid())
+  );
+
+alter publication supabase_realtime add table hospital_capacity;
+
+-- ---------------------------------------------------------------------------
 -- capacity_history — one snapshot per hospital per save(), powering the
 -- "Berichte" trend chart with real data instead of the client-side demo
 -- numbers. Not wired up in index.html yet — save() would need to insert a
@@ -125,6 +166,37 @@ create policy "capacity_history_insert_own" on capacity_history
   with check (
     hospital = (select hospital from hospital_profiles where user_id = auth.uid())
   );
+
+-- ---------------------------------------------------------------------------
+-- Seed hospital_capacity with the same 21-hospital demo dataset the client
+-- currently ships as the HOSPITALS constant, so the public map isn't empty
+-- the moment SUPABASE_CONFIGURED flips to true. Each hospital's own
+-- "Speichern & veröffentlichen" overwrites its row going forward.
+-- ---------------------------------------------------------------------------
+insert into hospital_capacity (hospital, ops, max, fach)
+values
+  ('AKH Wien', '{"g": 6, "h": 2, "n": 2, "o": 4, "onk": 2}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4, "onk": 3}'::jsonb, ARRAY['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neurochirurgie','Orthopädie / Unfallchirurgie','Onkologie']::text[]),
+  ('Klinik Favoriten', '{"g": 5, "h": 0, "n": 1, "o": 3, "gy": 1}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4, "gy": 3}'::jsonb, ARRAY['Allgemeinchirurgie','Orthopädie / Unfallchirurgie','Gynäkologie']::text[]),
+  ('Klinik Ottakring', '{"g": 4, "h": 0, "n": 0, "o": 2, "gy": 1, "u": 0}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4, "gy": 2, "u": 2}'::jsonb, ARRAY['Allgemeinchirurgie','Gynäkologie','Urologie']::text[]),
+  ('Kepler Universitätsklinikum', '{"g": 5, "h": 2, "n": 2, "o": 4}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4}'::jsonb, ARRAY['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neurochirurgie','Orthopädie / Unfallchirurgie']::text[]),
+  ('Klinikum Wels-Grieskirchen', '{"g": 1, "h": 0, "n": 0, "o": 1}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4}'::jsonb, ARRAY['Allgemeinchirurgie','Orthopädie / Unfallchirurgie']::text[]),
+  ('Pyhrn-EW Klinikum Steyr', '{"g": 4, "h": 0, "n": 0, "o": 3, "gy": 1}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4, "gy": 2}'::jsonb, ARRAY['Allgemeinchirurgie','Orthopädie / Unfallchirurgie','Gynäkologie']::text[]),
+  ('Ordensklinikum Linz', '{"g": 4, "h": 1, "n": 0, "o": 2, "gy": 0}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4, "gy": 2}'::jsonb, ARRAY['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Gynäkologie']::text[]),
+  ('LKH Univ.-Klinikum Graz', '{"g": 0, "h": 0, "n": 0, "o": 0}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4}'::jsonb, ARRAY['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neurochirurgie']::text[]),
+  ('LKH Hochsteiermark Leoben', '{"g": 3, "h": 0, "n": 0, "o": 2}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4}'::jsonb, ARRAY['Allgemeinchirurgie','Orthopädie / Unfallchirurgie']::text[]),
+  ('LKH Klagenfurt', '{"g": 3, "h": 1, "n": 0, "o": 2}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4}'::jsonb, ARRAY['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Orthopädie / Unfallchirurgie']::text[]),
+  ('LKH Villach', '{"g": 3, "h": 0, "n": 0, "o": 3, "gy": 1}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4, "gy": 2}'::jsonb, ARRAY['Allgemeinchirurgie','Orthopädie / Unfallchirurgie','Gynäkologie']::text[]),
+  ('Salzburger Universitätsklinikum', '{"g": 4, "h": 2, "n": 1, "o": 3}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4}'::jsonb, ARRAY['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neurochirurgie','Orthopädie / Unfallchirurgie']::text[]),
+  ('Kardinal Schwarzenberg Klinikum', '{"g": 3, "h": 0, "n": 0, "o": 2, "gy": 1}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4, "gy": 2}'::jsonb, ARRAY['Allgemeinchirurgie','Orthopädie / Unfallchirurgie','Gynäkologie']::text[]),
+  ('Tirol Kliniken Innsbruck', '{"g": 5, "h": 2, "n": 2, "o": 4}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4}'::jsonb, ARRAY['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neurochirurgie','Orthopädie / Unfallchirurgie']::text[]),
+  ('Bezirkskrankenhaus Kufstein', '{"g": 2, "h": 0, "n": 0, "o": 2}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4}'::jsonb, ARRAY['Allgemeinchirurgie','Orthopädie / Unfallchirurgie']::text[]),
+  ('Landeskrankenhaus Bregenz', '{"g": 3, "h": 0, "n": 0, "o": 2, "gy": 0}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4, "gy": 2}'::jsonb, ARRAY['Allgemeinchirurgie','Gynäkologie','Orthopädie / Unfallchirurgie']::text[]),
+  ('Landeskrankenhaus Feldkirch', '{"g": 1, "h": 0, "n": 0, "o": 1}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4}'::jsonb, ARRAY['Allgemeinchirurgie','Orthopädie / Unfallchirurgie']::text[]),
+  ('Universitätsklinikum St. Pölten', '{"g": 4, "h": 1, "n": 1, "o": 3}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4}'::jsonb, ARRAY['Allgemeinchirurgie','Herzchirurgie / Kardiologie','Neurochirurgie']::text[]),
+  ('Landesklinikum Wiener Neustadt', '{"g": 3, "h": 0, "n": 0, "o": 2, "gy": 1}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4, "gy": 2}'::jsonb, ARRAY['Allgemeinchirurgie','Gynäkologie','Orthopädie / Unfallchirurgie']::text[]),
+  ('Landesklinikum Krems', '{"g": 3, "h": 0, "n": 0, "o": 2}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4}'::jsonb, ARRAY['Allgemeinchirurgie','Orthopädie / Unfallchirurgie']::text[]),
+  ('KH Barmherzige Brüder Eisenstadt', '{"g": 2, "h": 0, "n": 0, "o": 1, "gy": 0}'::jsonb, '{"g": 8, "h": 3, "n": 2, "o": 4, "gy": 1}'::jsonb, ARRAY['Allgemeinchirurgie','Gynäkologie']::text[])
+on conflict (hospital) do nothing;
 
 -- ---------------------------------------------------------------------------
 -- Seed demo transfer rows (no real patient data, safe to keep).

@@ -1066,6 +1066,53 @@ function subscribeTransfers(){
     .subscribe();
 }
 
+// Shared public-map state (HOSPITALS[x].ops/max/fach) — one row per hospital
+// in Supabase, kept in sync in real time. rerenderMap() re-runs everything
+// that reads HOSPITALS, including the detail panel if a hospital is selected.
+let capacityChannel = null;
+
+function applyCapacityRow(row){
+  const h=HOSPITALS.find(x=>x.n===row.hospital);
+  if(!h) return;
+  h.ops={...row.ops}; h.max={...row.max}; h.fach=[...(row.fach||[])];
+}
+
+function rerenderMap(){
+  renderPins(); renderList(); updateMapStats();
+  if(selectedH){
+    const h=HOSPITALS.find(x=>x.id===selectedH.id);
+    if(h) selectHospital(h);
+  }
+}
+
+async function loadHospitalCapacity(){
+  if(!SUPABASE_CONFIGURED) return;
+  const {data,error}=await sb.from('hospital_capacity').select('*');
+  if(error){console.error('loadHospitalCapacity',error);return;}
+  data.forEach(applyCapacityRow);
+  rerenderMap();
+}
+
+function subscribeHospitalCapacity(){
+  if(!SUPABASE_CONFIGURED || capacityChannel) return;
+  capacityChannel = sb.channel('hospital-capacity-sync')
+    .on('postgres_changes',{event:'*',schema:'public',table:'hospital_capacity'},payload=>{
+      if(payload.eventType==='INSERT'||payload.eventType==='UPDATE') applyCapacityRow(payload.new);
+      rerenderMap();
+    })
+    .subscribe();
+}
+
+// Fire-and-forget upsert of the logged-in hospital's own row — publishToMap()
+// already applied the change to the local HOSPITALS entry and re-rendered,
+// so a slow/failed write only delays other sessions seeing it, not this one.
+async function persistCapacity(h){
+  if(!SUPABASE_CONFIGURED) return;
+  const {error}=await sb.from('hospital_capacity')
+    .upsert({hospital:h.n, ops:h.ops, max:h.max, fach:h.fach, updated_at:new Date().toISOString()});
+  if(error) console.error('persistCapacity',error);
+}
+
 const HIST_DATA = [
   {c:'var(--green)', txt:'OP-Kapazität aktualisiert — 3 Allgemein-OP frei',       t:'Heute 07:45'},
   {c:'var(--accent)',txt:'OP-Anfrage angenommen — TRF-2831 · Orthopädie',          t:'Heute 06:30'},
@@ -1215,6 +1262,7 @@ async function logout(){
   if(SUPABASE_CONFIGURED) await sb.auth.signOut();
   CU=null;
   if(transfersChannel){sb.removeChannel(transfersChannel);transfersChannel=null;}
+  if(capacityChannel){sb.removeChannel(capacityChannel);capacityChannel=null;}
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('app').classList.remove('on');
   document.getElementById('lu').value='';
@@ -1268,6 +1316,7 @@ function initApp(){
   renderOpTable(); renderAddCatSelect();
   recalc(); updateMapStats(); tick();
   loadTransfers(); subscribeTransfers();
+  loadHospitalCapacity(); subscribeHospitalCapacity();
 }
 
 /* ============================================================
@@ -1604,8 +1653,8 @@ function publishToMap(only){
     if(key){ h.ops[key]=c.free; h.max[key]=c.total; }
   });
   if(!only) h.fach=AF.slice();
-  renderPins(); renderList(); updateMapStats();
-  if(selectedH?.id===h.id) selectHospital(h);
+  rerenderMap();
+  persistCapacity(h);
 }
 
 function save(){
